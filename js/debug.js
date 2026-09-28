@@ -1,11 +1,24 @@
 // NOTE5 — Debug overlay completo. Sin Eruda. Sin dependencias.
 // Incluye: panel de logs + consola interactiva + captura de errores.
 
-(function () {
+
+  (function () {
   'use strict';
 
   const MAX_LINES = 500;
   const HISTORY_KEY = 'note5.dbg.history';
+  const ENABLED_KEY = 'note5.dbg.enabled';
+
+  // ---------- Decisión: on/off ----------
+  const params = new URLSearchParams(location.search);
+  const flag = params.get('debug');
+  let enabled;
+  if (flag === '1') { enabled = true; localStorage.setItem(ENABLED_KEY, '1'); }
+  else if (flag === '0') { enabled = false; localStorage.removeItem(ENABLED_KEY); }
+  else enabled = localStorage.getItem(ENABLED_KEY) === '1';
+
+  if (!enabled) return;
+
   const state = {
     body: null, counts: null, panel: null, tab: null, input: null,
     counter: { log: 0, warn: 0, error: 0, net: 0 },
@@ -27,7 +40,9 @@
     push('log', ['[debug] ready — ' + location.href]);
     push('log', ['[debug] UA: ' + navigator.userAgent]);
     push('log', ['[debug] type JS below and press Enter. up/down arrows = history.']);
+    push('log', ['[debug] disable: ?debug=0 or the "disable" button.']);
   }
+
 
   // ---------- UI ----------
   function buildUI() {
@@ -87,7 +102,7 @@
         padding: 8px 12px; border-radius: 4px; font: inherit; font-weight: 600;
       }
       #__dbg_tab {
-        position: fixed; right: 8px; bottom: 8px;
+        position: fixed; left: 8px; bottom: 8px;
         background: #5b9bd5; color: #0b1116;
         padding: 10px 14px; border-radius: 999px;
         font: 600 13px ui-monospace, monospace;
@@ -104,7 +119,7 @@
         <div class="title">NOTE5 · debug</div>
         <div class="counts" id="__dbg_counts">0e 0w 0l 0n</div>
         <button id="__dbg_clear">clear</button>
-        <button id="__dbg_reload">reload</button>
+        <button id="__dbg_disable">disable</button>
         <button id="__dbg_hide">hide</button>
       </div>
       <div id="__dbg_body"></div>
@@ -128,7 +143,10 @@
     state.input = panel.querySelector('#__dbg_input');
 
     panel.querySelector('#__dbg_clear').onclick = clear;
-    panel.querySelector('#__dbg_reload').onclick = () => location.reload();
+    panel.querySelector('#__dbg_disable').onclick = () => {
+      localStorage.removeItem(ENABLED_KEY);
+      location.reload();
+    };
     panel.querySelector('#__dbg_hide').onclick = () => toggle(false);
     panel.querySelector('#__dbg_run').onclick = executeInput;
 

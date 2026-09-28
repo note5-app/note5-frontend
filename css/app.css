@@ -414,3 +414,90 @@ body {
   color: var(--text-muted);
   white-space: pre;
 }
+
+/* ---------- Editor ---------- */
+.header__title:focus { outline: none; }
+.pin-active { color: var(--accent); }
+
+.editor-file {
+  flex: 1;
+  min-height: 60vh;
+  border: none;
+  background: transparent;
+  padding: var(--space-3);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.6;
+}
+.editor-file:focus { outline: none; }
+
+/* ---------- Bottom sheet ---------- */
+.sheet-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(5, 10, 14, 0.6);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  z-index: 300;
+  display: flex;
+  align-items: flex-end;
+  animation: fade-in var(--dur-fast) ease;
+}
+.sheet {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  background: var(--bg-elevated);
+  border-top-left-radius: var(--radius-lg);
+  border-top-right-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-4) calc(var(--safe-bottom) + var(--space-4));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  box-shadow: var(--shadow-2);
+  animation: sheet-up var(--dur-base) ease;
+}
+@keyframes sheet-up {
+  from { transform: translateY(20px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+.sheet__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: var(--space-2) var(--space-2) var(--space-3);
+}
+.sheet__btn {
+  text-align: left;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text-strong);
+  font-size: 15px;
+  border: 1px solid var(--border);
+}
+.sheet__btn:hover { background: var(--surface-hover); }
+.sheet__btn--primary { background: var(--accent); color: var(--accent-contrast); border-color: transparent; }
+.sheet__btn--danger  { color: var(--danger); }
+.sheet__btn--ghost   { background: transparent; border-color: transparent; color: var(--text-muted); }
+
+/* ---------- Icon picker ---------- */
+.icon-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+}
+.icon-grid__item {
+  aspect-ratio: 1;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 24px;
+  display: grid;
+  place-items: center;
+  transition: background var(--dur-fast), border-color var(--dur-fast);
+}
+.icon-grid__item:hover { background: var(--surface-hover); }
+.icon-grid__item.active { border-color: var(--accent); background: var(--accent-muted); }
