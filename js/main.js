@@ -6,6 +6,7 @@ import { ListView } from './ui/views/list.js';
 import { EditorView } from './ui/views/editor.js';
 import { SettingsView } from './ui/views/settings.js';
 import { toast } from './ui/toast.js';
+import { startScheduler } from './sync/scheduler.js';
 
 const app = document.getElementById('app');
 
@@ -14,21 +15,17 @@ async function boot() {
   await session.init();
   registerRoutes();
 
-  // Aviso al salir con cambios sin guardar (se activará en Fase 5)
-  window.addEventListener('beforeunload', (e) => {
-    // TODO: consultar estado dirty real
-  });
-
-
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch((err) => {
       console.warn('[sw] register failed', err);
     });
   }
 
-  window.addEventListener('online', () => {
-    // Si vuelve la conexión y hay auto-backup pendiente, el scheduler se encarga.
-  });
+  // Si ya hay sesión activa (Remember me), arrancar el scheduler.
+  // Si no, login.js lo arranca tras autenticar.
+  if (session.isLoggedIn()) {
+    startScheduler();
+  }
 
   router.start();
 }
