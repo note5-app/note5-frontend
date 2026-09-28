@@ -3,6 +3,11 @@ import { session } from '../../storage/session.js';
 import { go } from '../router.js';
 import { toast } from '../toast.js';
 
+import { showProgress, updateProgress, hideProgress, progressError } from '../progress.js';
+import { cryptoClient } from '../../crypto/client.js';
+import { CONFIG } from '../../config.js';
+
+
 export function LoginView(root) {
   clear(root);
   const form = el('form', { class: 'login' }, [
@@ -27,22 +32,32 @@ export function LoginView(root) {
       'Your password never leaves this device. If you lose it, your notes cannot be recovered.'),
   ]);
 
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const username = form.querySelector('#login-user').value.trim();
-    const password = form.querySelector('#login-pass').value;
-    const remember = form.querySelector('#login-remember').checked;
-    if (!username || !password) return;
-    const btn = form.querySelector('button[type="submit"]');
-    btn.disabled = true; btn.textContent = 'Deriving identity…';
-    try {
-      await session.login(username, password, remember);
-      go('/notes');
-    } catch (err) {
-      toast('Could not derive identity: ' + err.message);
-      btn.disabled = false; btn.textContent = 'Unlock';
-    }
-  });
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const username = form.querySelector('#login-user').value.trim();
+  const password = form.querySelector('#login-pass').value;
+  const remember = form.querySelector('#login-remember').checked;
+  if (!username || !password) return;
+
+  let showTech = false;
+  try { showTech = !!JSON.parse(localStorage.getItem(CONFIG.SETTINGS_KEY) || '{}').showTechPanel; } catch {}
+
+  showProgress({ title: 'Unlocking NOTE5…', tech: showTech });
+  cryptoClient.onProgress(updateProgress);
+
+  try {
+    await session.login(username, password, remember);
+    updateProgress({ stage: 'done', pct: 100, detail: 'Identity ready · unlocking' });
+    setTimeout(() => { hideProgress(); go('/notes'); }, 250);
+  } catch (err) {
+    progressError(err.message);
+    setTimeout(() => {
+      hideProgress();
+      toast('Unlock failed: ' + err.message);
+    }, 2200);
+  }
+});
 
   root.appendChild(form);
 }
