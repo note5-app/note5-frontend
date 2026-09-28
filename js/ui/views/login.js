@@ -1,0 +1,48 @@
+import { el, clear } from '../../utils/dom.js';
+import { session } from '../../storage/session.js';
+import { go } from '../router.js';
+import { toast } from '../toast.js';
+
+export function LoginView(root) {
+  clear(root);
+  const form = el('form', { class: 'login' }, [
+    el('div', { class: 'login__brand' }, [
+      el('h1', {}, 'NOTE5'),
+      el('p', {}, 'Encrypted notes · offline-first'),
+    ]),
+    el('div', { class: 'field' }, [
+      el('label', { class: 'field__label', for: 'login-user' }, 'Username'),
+      el('input', { class: 'input', id: 'login-user', type: 'text', autocomplete: 'username', required: true, autocapitalize: 'off', spellcheck: 'false' }),
+    ]),
+    el('div', { class: 'field' }, [
+      el('label', { class: 'field__label', for: 'login-pass' }, 'Master password'),
+      el('input', { class: 'input', id: 'login-pass', type: 'password', autocomplete: 'current-password', required: true }),
+    ]),
+    el('label', { class: 'checkbox' }, [
+      el('input', { type: 'checkbox', id: 'login-remember' }),
+      el('span', { class: 'checkbox__text' }, 'Remember me on this device'),
+    ]),
+    el('button', { class: 'btn btn--primary', type: 'submit' }, 'Unlock'),
+    el('p', { style: 'font-size:12px;color:var(--text-muted);text-align:center;margin-top:12px' },
+      'Your password never leaves this device. If you lose it, your notes cannot be recovered.'),
+  ]);
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const username = form.querySelector('#login-user').value.trim();
+    const password = form.querySelector('#login-pass').value;
+    const remember = form.querySelector('#login-remember').checked;
+    if (!username || !password) return;
+    const btn = form.querySelector('button[type="submit"]');
+    btn.disabled = true; btn.textContent = 'Deriving identity…';
+    try {
+      await session.login(username, password, remember);
+      go('/notes');
+    } catch (err) {
+      toast('Could not derive identity: ' + err.message);
+      btn.disabled = false; btn.textContent = 'Unlock';
+    }
+  });
+
+  root.appendChild(form);
+}

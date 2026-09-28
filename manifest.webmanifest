@@ -1,0 +1,14 @@
+{
+  "name": "NOTE5",
+  "short_name": "NOTE5",
+  "description": "Encrypted notes, offline-first",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f1519",
+  "theme_color": "#17212b",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
