@@ -4,6 +4,7 @@ import { session } from '../../storage/session.js';
 import { toggleTheme } from '../theme.js';
 import { listNotes, previewOf } from '../../storage/notes.js';
 import { filterNotes, parseQuery } from '../search.js';
+import { mount as mountStatus } from '../status.js';
 
 export async function ListView(root) {
   clear(root);
@@ -11,12 +12,15 @@ export async function ListView(root) {
   const userId = session.user.userId;
   const allNotes = await listNotes(userId);
 
+  const statusSlot = el('div', { style: 'display:flex;align-items:center' });
+
   const header = el('header', { class: 'header' }, [
     el('button', { class: 'btn btn--ghost btn--icon', title: 'Settings', onclick: () => go('/settings') }, '⚙'),
     el('div', { class: 'header__title' }, [
       'NOTE5',
       el('div', { class: 'header__subtitle' }, session.user?.username || ''),
     ]),
+    statusSlot,
     el('button', { class: 'btn btn--ghost btn--icon', title: 'Toggle theme', onclick: toggleTheme }, '◐'),
   ]);
 
@@ -38,6 +42,7 @@ export async function ListView(root) {
   const fab = el('button', { class: 'fab', title: 'New note', onclick: () => go('/note/new') }, '+');
 
   root.append(header, search, list, fab);
+  mountStatus(statusSlot);
 
   let debounce = null;
   searchInput.addEventListener('input', () => {

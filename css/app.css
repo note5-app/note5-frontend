@@ -550,3 +550,41 @@ body {
   border-width: 0 2px 2px 0;
   transform: rotate(45deg) translate(-1px, -2px);
 }
+
+/* ---------- Status pill ---------- */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color var(--dur-fast), background var(--dur-fast);
+}
+.status-pill::before {
+  content: "";
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+.status-pill[data-state="idle"] { display: none; }
+.status-pill[data-state="dirty"]  { color: var(--warning); }
+.status-pill[data-state="saving"] { color: var(--accent); }
+.status-pill[data-state="syncing"]{ color: var(--accent); }
+.status-pill[data-state="error"]  { color: var(--danger); background: rgba(217,112,112,0.14); }
+.status-pill[data-state="offline"]{ color: var(--warning); }
+
+.status-pill[data-state="syncing"]::before,
+.status-pill[data-state="saving"]::before {
+  animation: status-pulse 1.2s ease-in-out infinite;
+}
+@keyframes status-pulse {
+  0%, 100% { opacity: 0.4; }
+  50%      { opacity: 1; }
+}

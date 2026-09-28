@@ -9,6 +9,7 @@ import { startAutosave, stopAutosave } from '../../storage/autosave.js';
 import { loadSettings, updateSettings } from '../../storage/settings.js';
 import { confirmDialog } from '../dialog.js';
 import { rememberLastOpened } from '../search.js';
+import { mount as mountStatus, setStatus } from '../status.js';
 
 export async function EditorView(root, { params }) {
   clear(root);
@@ -17,8 +18,9 @@ export async function EditorView(root, { params }) {
   let isNew = params.id === 'new';
 
   let note;
-  if (isNew) note = createNote('chat');
-  else {
+  if (isNew) {
+    note = createNote('chat');
+  } else {
     note = await getNote(userId, params.id);
     if (!note) { go('/notes'); return; }
     rememberLastOpened(note.id);
@@ -38,6 +40,8 @@ export async function EditorView(root, { params }) {
     oninput: () => { note.title = titleInput.value; markDirty(); debouncedPersist(); },
   });
 
+  const statusSlot = el('div', { style: 'display:flex;align-items:center' });
+
   const pinBtn = el('button', {
     class: 'btn btn--ghost btn--icon' + (note.pinned ? ' pin-active' : ''),
     title: note.pinned ? 'Unpin' : 'Pin',
@@ -53,13 +57,14 @@ export async function EditorView(root, { params }) {
   }, '⋯');
 
   const header = el('header', { class: 'header' }, [
-    backBtn, titleInput, pinBtn, iconBtn, menuBtn,
+    backBtn, titleInput, statusSlot, pinBtn, iconBtn, menuBtn,
   ]);
 
   const body = el('div', { class: 'chat' });
   const composer = el('div', { class: 'composer' });
 
   root.append(header, body, composer);
+  mountStatus(statusSlot);
 
   render();
 
@@ -301,16 +306,19 @@ export async function EditorView(root, { params }) {
     if (dirty) return;
     dirty = true;
     document.title = '● NOTE5';
+    setStatus('dirty', 'Unsaved changes');
   }
 
   async function persist() {
     clearTimeout(persistTimer);
     if (isNew && !hasContent(note)) return;
+    setStatus('saving', 'Saving…');
     await saveNote(userId, note);
     dirty = false;
     document.title = 'NOTE5';
+    setStatus('idle', '');
     if (isNew) {
-      isNew = false; // la nota ya existe
+      isNew = false;
       history.replaceState(null, '', `#/note/${note.id}`);
       rememberLastOpened(note.id);
     }
@@ -337,14 +345,13 @@ export async function EditorView(root, { params }) {
         if (dontAsk) updateSettings({ warnUnsaved: false });
         if (choice === 'cancel') return;
         if (choice === 'confirm') await persist();
-        // 'alt' → discard, salimos sin guardar
-        if (choice === 'alt') { dirty = false; }
+        if (choice === 'alt') { dirty = false; setStatus('idle', ''); }
       } else {
         await persist();
       }
     } else if (dirty) {
-      // contenido vacío, no guardamos
       dirty = false;
+      setStatus('idle', '');
     }
     back();
   }

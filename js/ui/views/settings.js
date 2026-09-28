@@ -6,9 +6,15 @@ import { toast } from '../toast.js';
 import { loadSettings, saveSettings } from '../../storage/settings.js';
 import { deleteAllForUser } from '../../storage/notes.js';
 import { showProgress, updateProgress, hideProgress, progressError } from '../progress.js';
+import { setStatus } from '../status.js';
+import { confirmDialog } from '../dialog.js';
 import {
   backupToCloud, restoreFromCloud, exportToFile, importFromFile,
 } from '../../sync/backup.js';
+import {
+  checkConflict, setLastSyncedVersion, setLastBackupAt,
+  rescheduleScheduler, stopScheduler,
+} from '../../sync/scheduler.js';
 
 export function SettingsView(root) {
   clear(root);
@@ -25,6 +31,7 @@ export function SettingsView(root) {
     section('Account', [
       row('Signed in as', session.user?.username || '—'),
       rowButton('Log out', async () => {
+        stopScheduler();
         await session.logout();
         go('/login');
       }, 'danger'),
@@ -49,20 +56,18 @@ export function SettingsView(root) {
     section('Cloud backup', [
       checkbox('Automatic backup to cloud',
         settings.autobackup !== 'off',
-        (v) => { settings.autobackup = v ? 'daily' : 'off'; save(); }),
+        (v) => {
+          settings.autobackup = v ? 'daily' : 'off';
+          save();
+          rescheduleScheduler();
+        }),
       selectRow('Frequency',
         [{ v: '12h', l: 'Every 12 hours' }, { v: 'daily', l: 'Daily' },
          { v: 'weekly', l: 'Weekly' }, { v: 'monthly', l: 'Monthly' }],
         settings.autobackup === 'off' ? 'daily' : settings.autobackup,
-        (v) => { settings.autobackup = v; save(); }),
-      rowButton('Cloud backup now', () => runWithOverlay('Backing up…', async () => {
-        const res = await backupToCloud({ userId: session.user.userId, onProgress: updateProgress });
-        return `Backup done · ${res.notesCount} notes · ${res.chunkCount} chunk(s)`;
-      }), 'primary'),
-      rowButton('Cloud restore now', () => runWithOverlay('Restoring…', async () => {
-        const res = await restoreFromCloud({ userId: session.user.userId, onProgress: updateProgress });
-        return `Restored ${res.notesCount} notes from ${res.version}`;
-      })),
+        (v) => { settings.autobackup = v; save(); rescheduleScheduler(); }),
+      rowButton('Cloud backup now', () => runBackupFlow(), 'primary'),
+      rowButton('Cloud restore now', () => runRestoreFlow()),
     ]),
 
     section('Manual backup', [
@@ -92,17 +97,55 @@ export function SettingsView(root) {
 
   root.append(header, body);
 
+  // ---------- Backup / Restore flows ----------
+
+  async function runBackupFlow() {
+    const userId = session.user.userId;
+    const { conflict, remote } = await checkConflict(userId);
+    if (conflict) {
+      const { choice } = await confirmDialog({
+        title: 'Remote changes detected',
+        message: `The cloud backup (${remote.backupVersion}) is newer than what this device last synced. Overwriting will replace those changes. What do you want to do?`,
+        confirmLabel: 'Overwrite',
+        cancelLabel: 'Cancel',
+        altLabel: 'Restore',
+      });
+      if (choice === 'cancel') return;
+      if (choice === 'alt') return runRestoreFlow();
+    }
+    await runWithOverlay('Backing up…', async () => {
+      const res = await backupToCloud({ userId, onProgress: updateProgress });
+      setLastSyncedVersion(userId, res.version);
+      setLastBackupAt(userId, Date.now());
+      return `Backup done · ${res.notesCount} notes · ${res.chunkCount} chunk(s)`;
+    });
+  }
+
+  async function runRestoreFlow() {
+    const userId = session.user.userId;
+    if (!confirm('Restore will REPLACE every local note with the cloud backup. Continue?')) return;
+    await runWithOverlay('Restoring…', async () => {
+      const res = await restoreFromCloud({ userId, onProgress: updateProgress });
+      setLastSyncedVersion(userId, res.version);
+      setLastBackupAt(userId, Date.now());
+      return `Restored ${res.notesCount} notes from ${res.version}`;
+    });
+  }
+
   // ---------- Overlay helper ----------
 
   async function runWithOverlay(title, fn) {
     const { showTechPanel } = loadSettings();
+    setStatus('syncing', title);
     showProgress({ title, tech: showTechPanel });
     try {
       const msg = await fn();
       updateProgress({ stage: 'done', pct: 100, detail: msg });
+      setStatus('idle', '');
       setTimeout(() => hideProgress(), 900);
     } catch (err) {
       progressError(err.message || String(err));
+      setStatus('error', err.message || String(err));
       setTimeout(() => hideProgress(), 2400);
     }
   }

@@ -3,6 +3,7 @@ import { session } from '../../storage/session.js';
 import { go } from '../router.js';
 import { toast } from '../toast.js';
 
+import { startScheduler } from '../../sync/scheduler.js';
 import { showProgress, updateProgress, hideProgress, progressError } from '../progress.js';
 import { cryptoClient } from '../../crypto/client.js';
 import { CONFIG } from '../../config.js';
@@ -48,6 +49,7 @@ form.addEventListener('submit', async (e) => {
 
   try {
     await session.login(username, password, remember);
+    startScheduler();
     updateProgress({ stage: 'done', pct: 100, detail: 'Identity ready · unlocking' });
     setTimeout(() => { hideProgress(); go('/notes'); }, 250);
   } catch (err) {
