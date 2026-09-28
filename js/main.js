@@ -21,10 +21,14 @@ async function boot() {
     });
   }
 
-  // Si ya hay sesión activa (Remember me), arrancar el scheduler.
-  // Si no, login.js lo arranca tras autenticar.
   if (session.isLoggedIn()) {
-    startScheduler();
+    const ok = await session.rehydrate();
+    if (!ok) {
+      // Sesión persistida pero sin clave en esta pestaña → pedir contraseña
+      await session.logout();
+    } else {
+      startScheduler();
+    }
   }
 
   router.start();

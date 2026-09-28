@@ -27,6 +27,7 @@ self.onmessage = async (e) => {
     let result;
     switch (type) {
       case 'deriveIdentity': result = await deriveIdentity(payload); break;
+      case 'rehydrate':      result = await rehydrate(payload); break;
       case 'encrypt':        result = await encrypt(payload); break;
       case 'decrypt':        result = await decrypt(payload); break;
       case 'lock':           lock(); result = { ok: true }; break;
@@ -81,7 +82,8 @@ async function deriveIdentity({ username, password }) {
 
   state.derivedAt = Date.now();
   report('ready', 80, 'Master key ready');
-  return { userId: state.userId };
+  return { userId: state.userId, masterBitsB64: bufToBase64(masterBits) };
+
 }
 
 // ---------- Encrypt ----------
@@ -168,6 +170,35 @@ function toUint8(x) {
 function bufToHex(buf) {
   return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
+
+
+function bufToBase64(buf) {
+  const bytes = new Uint8Array(buf);
+  let binary = '';
+  const S = 0x8000;
+  for (let i = 0; i < bytes.length; i += S) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + S));
+  }
+  return btoa(binary);
+}
+
+function base64ToBuf(b64) {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+async function rehydrate({ masterBitsB64, userId }) {
+  const masterBits = base64ToBuf(masterBitsB64);
+  state.masterKey = await crypto.subtle.importKey(
+    'raw', masterBits, { name: 'HKDF' }, false, ['deriveKey']
+  );
+  state.userId = userId;
+  state.derivedAt = Date.now();
+  return { userId: state.userId };
+}
+
 
 function lock() {
   state.userId = null;

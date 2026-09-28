@@ -39,6 +39,7 @@ export class CryptoClient {
   deriveIdentity(username, password) { return this._send('deriveIdentity', { username, password }); }
   encrypt(plaintextBytes)            { return this._send('encrypt', { plaintext: plaintextBytes }); }
   decrypt(envelopeBytes)             { return this._send('decrypt', { envelope: envelopeBytes }); }
+  rehydrate(masterBitsB64, userId)   { return this._send('rehydrate', { masterBitsB64, userId }); }
   lock()                             { return this._send('lock', {}); }
   status()                           { return this._send('status', {}); }
 }
