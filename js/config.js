@@ -12,4 +12,8 @@ export const CONFIG = {
   THEME_KEY: 'note5.theme',
   SESSION_KEY: 'note5.session',
   SETTINGS_KEY: 'note5.settings',
+  APP_VERSION: '0.6.0',
+  BACKUP_FILE_EXT: '.note5',
+  BACKUP_MAGIC: 'NOTE5',
+  BACKUP_SCHEMA: 1,
 };

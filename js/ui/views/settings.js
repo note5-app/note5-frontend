@@ -5,6 +5,10 @@ import { session } from '../../storage/session.js';
 import { toast } from '../toast.js';
 import { loadSettings, saveSettings } from '../../storage/settings.js';
 import { deleteAllForUser } from '../../storage/notes.js';
+import { showProgress, updateProgress, hideProgress, progressError } from '../progress.js';
+import {
+  backupToCloud, restoreFromCloud, exportToFile, importFromFile,
+} from '../../sync/backup.js';
 
 export function SettingsView(root) {
   clear(root);
@@ -51,11 +55,23 @@ export function SettingsView(root) {
          { v: 'weekly', l: 'Weekly' }, { v: 'monthly', l: 'Monthly' }],
         settings.autobackup === 'off' ? 'daily' : settings.autobackup,
         (v) => { settings.autobackup = v; save(); }),
+      rowButton('Cloud backup now', () => runWithOverlay('Backing up…', async () => {
+        const res = await backupToCloud({ userId: session.user.userId, onProgress: updateProgress });
+        return `Backup done · ${res.notesCount} notes · ${res.chunkCount} chunk(s)`;
+      }), 'primary'),
+      rowButton('Cloud restore now', () => runWithOverlay('Restoring…', async () => {
+        const res = await restoreFromCloud({ userId: session.user.userId, onProgress: updateProgress });
+        return `Restored ${res.notesCount} notes from ${res.version}`;
+      })),
     ]),
 
     section('Manual backup', [
-      rowButton('Export backup to file…', () => toast('Coming in Phase 7')),
-      rowButton('Import backup from file…', () => toast('Coming in Phase 7')),
+      rowButton('Export backup to file…', () => runWithOverlay('Exporting…', async () => {
+        const res = await exportToFile({ userId: session.user.userId, onProgress: updateProgress });
+        downloadBlob(res.bytes, res.filename);
+        return `Exported · ${res.filename}`;
+      })),
+      rowButton('Import backup from file…', () => pickFileAndImport()),
     ]),
 
     section('Advanced', [
@@ -75,6 +91,53 @@ export function SettingsView(root) {
   ]);
 
   root.append(header, body);
+
+  // ---------- Overlay helper ----------
+
+  async function runWithOverlay(title, fn) {
+    const { showTechPanel } = loadSettings();
+    showProgress({ title, tech: showTechPanel });
+    try {
+      const msg = await fn();
+      updateProgress({ stage: 'done', pct: 100, detail: msg });
+      setTimeout(() => hideProgress(), 900);
+    } catch (err) {
+      progressError(err.message || String(err));
+      setTimeout(() => hideProgress(), 2400);
+    }
+  }
+
+  function pickFileAndImport() {
+    const input = el('input', { type: 'file', accept: '.note5,application/octet-stream' });
+    input.style.display = 'none';
+    document.body.appendChild(input);
+    input.addEventListener('change', async () => {
+      const file = input.files?.[0];
+      input.remove();
+      if (!file) return;
+      const buf = await file.arrayBuffer();
+      await runWithOverlay('Importing…', async () => {
+        const res = await importFromFile({
+          userId: session.user.userId,
+          bytes: new Uint8Array(buf),
+          onProgress: updateProgress,
+        });
+        return `Imported ${res.notesCount} notes`;
+      });
+    });
+    input.click();
+  }
+}
+
+function downloadBlob(bytes, filename) {
+  const blob = new Blob([bytes], { type: 'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 100);
 }
 
 function section(title, children) {
@@ -91,7 +154,7 @@ function row(title, value) {
 function rowButton(label, onclick, variant) {
   return el('div', { class: 'settings__row' }, [
     el('button', {
-      class: 'btn btn--ghost' + (variant === 'danger' ? ' btn--danger' : ''),
+      class: 'btn btn--ghost' + (variant === 'danger' ? ' btn--danger' : variant === 'primary' ? ' btn--primary' : ''),
       onclick, style: 'width:100%;justify-content:flex-start',
     }, label),
   ]);
