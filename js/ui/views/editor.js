@@ -2,25 +2,30 @@ import { el, clear } from '../../utils/dom.js';
 import { back, go } from '../router.js';
 import { session } from '../../storage/session.js';
 import {
-  createNote, switchType, getNote, saveNote, deleteNote, hasContent, ICONS, NOTE_TYPES,
+  createNote, switchType, getNote, saveNote, deleteNote, hasContent, ICONS,
 } from '../../storage/notes.js';
 import { toast } from '../toast.js';
+import { startAutosave, stopAutosave } from '../../storage/autosave.js';
+import { loadSettings, updateSettings } from '../../storage/settings.js';
+import { confirmDialog } from '../dialog.js';
+import { rememberLastOpened } from '../search.js';
 
 export async function EditorView(root, { params }) {
   clear(root);
 
   const userId = session.user.userId;
-  const isNew = params.id === 'new';
+  let isNew = params.id === 'new';
 
   let note;
-  if (isNew) {
-    note = createNote('chat');
-  } else {
+  if (isNew) note = createNote('chat');
+  else {
     note = await getNote(userId, params.id);
     if (!note) { go('/notes'); return; }
+    rememberLastOpened(note.id);
   }
 
   let dirty = false;
+  let persistTimer = null;
 
   // ---------- Header ----------
   const backBtn = el('button', { class: 'btn btn--ghost btn--icon', title: 'Back', onclick: onBack }, '←');
@@ -30,8 +35,7 @@ export async function EditorView(root, { params }) {
     style: 'background:transparent;border:none;font-size:17px;font-weight:600;color:var(--text-strong);min-width:0',
     value: note.title || '',
     placeholder: 'Untitled',
-    oninput: () => { note.title = titleInput.value; markDirty(); },
-    onblur: () => { if (note.title.trim()) persist(); },
+    oninput: () => { note.title = titleInput.value; markDirty(); debouncedPersist(); },
   });
 
   const pinBtn = el('button', {
@@ -41,22 +45,17 @@ export async function EditorView(root, { params }) {
   }, '📌');
 
   const iconBtn = el('button', {
-    class: 'btn btn--ghost btn--icon',
-    title: 'Change icon',
-    onclick: openIconPicker,
+    class: 'btn btn--ghost btn--icon', title: 'Change icon', onclick: openIconPicker,
   }, note.icon);
 
   const menuBtn = el('button', {
-    class: 'btn btn--ghost btn--icon',
-    title: 'More',
-    onclick: openNoteMenu,
+    class: 'btn btn--ghost btn--icon', title: 'More', onclick: openNoteMenu,
   }, '⋯');
 
   const header = el('header', { class: 'header' }, [
     backBtn, titleInput, pinBtn, iconBtn, menuBtn,
   ]);
 
-  // ---------- Body & composer (se rellenan en render) ----------
   const body = el('div', { class: 'chat' });
   const composer = el('div', { class: 'composer' });
 
@@ -64,24 +63,18 @@ export async function EditorView(root, { params }) {
 
   render();
 
-  // ---------- Render by type ----------
-
+  // ---------- Render ----------
   function render() {
-    clear(body);
-    clear(composer);
+    clear(body); clear(composer);
     if (note.type === 'chat') renderChat();
     else if (note.type === 'file') renderFile();
     else if (note.type === 'credentials') renderCredentials();
   }
 
-  // --- chat ---
-    function renderChat() {
-    clear(body);
-    clear(composer);
-
+  function renderChat() {
+    clear(body); clear(composer);
     if (note.messages.length === 0) {
-      body.appendChild(el('div', { class: 'list__empty' },
-        'No messages yet. Send the first one below.'));
+      body.appendChild(el('div', { class: 'list__empty' }, 'No messages yet. Send the first one below.'));
     } else {
       for (const m of note.messages) body.appendChild(renderBubble(m));
     }
@@ -94,7 +87,7 @@ export async function EditorView(root, { params }) {
 
   function renderBubble(m) {
     const time = new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const bubble = el('div', {
+    return el('div', {
       class: 'bubble bubble--out',
       onclick: () => openMessageSheet(m),
     }, [
@@ -104,14 +97,11 @@ export async function EditorView(root, { params }) {
         el('span', {}, time),
       ].filter(Boolean)),
     ]);
-    return bubble;
   }
 
   function buildComposerTextarea() {
     const ta = el('textarea', {
-      class: 'textarea',
-      placeholder: 'Write a message…',
-      rows: 1,
+      class: 'textarea', placeholder: 'Write a message…', rows: 1,
       oninput: () => {
         ta.style.height = 'auto';
         ta.style.height = Math.min(ta.scrollHeight, window.innerHeight * 0.4) + 'px';
@@ -133,75 +123,24 @@ export async function EditorView(root, { params }) {
     renderChat();
   }
 
-  function openMessageSheet(m) {
-    const isEditing = { v: false };
-    const sheet = el('div', { class: 'sheet-backdrop', onclick: (e) => { if (e.target === sheet) sheet.remove(); } });
-    const card = el('div', { class: 'sheet' });
-    sheet.appendChild(card);
-
-    function showActions() {
-      clear(card);
-      card.append(
-        el('button', { class: 'sheet__btn', onclick: () => { copyText(m.text); sheet.remove(); toast('Copied'); } }, '📋 Copy'),
-        el('button', { class: 'sheet__btn', onclick: () => { isEditing.v = true; showEdit(); } }, '✏️ Edit'),
-        el('button', { class: 'sheet__btn sheet__btn--danger', onclick: () => { removeMessage(m); sheet.remove(); } }, '🗑 Delete'),
-        el('button', { class: 'sheet__btn sheet__btn--ghost', onclick: () => sheet.remove() }, 'Cancel'),
-      );
-    }
-
-    function showEdit() {
-      clear(card);
-      const ta = el('textarea', { class: 'textarea', style: 'margin-bottom:12px' });
-      ta.value = m.text;
-      card.append(
-        ta,
-        el('button', {
-          class: 'sheet__btn sheet__btn--primary',
-          onclick: async () => {
-            const text = ta.value.trim();
-            if (!text) return;
-            m.text = text; m.edited = true;
-            await persist();
-            sheet.remove();
-            renderChat();
-          },
-        }, 'Save'),
-        el('button', { class: 'sheet__btn sheet__btn--ghost', onclick: () => sheet.remove() }, 'Cancel'),
-      );
-      requestAnimationFrame(() => ta.focus());
-    }
-
-    showActions();
-    document.body.appendChild(sheet);
-  }
-
-  async function removeMessage(m) {
-    note.messages = note.messages.filter(x => x.id !== m.id);
-    await persist();
-    renderChat();
-  }
-
-  // --- file ---
   function renderFile() {
+    clear(body); clear(composer);
     const ta = el('textarea', { class: 'textarea editor-file', placeholder: 'Start writing…' });
     ta.value = note.content || '';
-    let timer = null;
     ta.addEventListener('input', () => {
       note.content = ta.value;
       markDirty();
-      clearTimeout(timer);
-      timer = setTimeout(() => persist(), 800);
+      debouncedPersist();
     });
-    ta.addEventListener('blur', () => { if (note.content !== ta.value) { note.content = ta.value; persist(); } });
     body.appendChild(ta);
-    // Sin composer
   }
 
-  // --- credentials ---
   function renderCredentials() {
+    clear(body); clear(composer);
     body.append(
       field('Service', note.service, (v) => { note.service = v; debouncedPersist(); }),
-      field('Username', note.username, (v) => { note.username = v; debouncedPersist(); }, { autocapitalize: 'off', spellcheck: false }),
+      field('Username', note.username, (v) => { note.username = v; debouncedPersist(); },
+        { autocapitalize: 'off', spellcheck: false }),
       secretField('Password', note.password, (v) => { note.password = v; debouncedPersist(); }),
       textareaField('Notes', note.notes, (v) => { note.notes = v; debouncedPersist(); }),
     );
@@ -233,7 +172,10 @@ export async function EditorView(root, { params }) {
     }, '👁');
     const copyBtn = el('button', {
       class: 'btn btn--ghost btn--icon', type: 'button', title: 'Copy',
-      onclick: () => { copyText(input.value); toast('Copied'); },
+      onclick: async () => {
+        try { await navigator.clipboard.writeText(input.value); toast('Copied'); }
+        catch { toast('Clipboard unavailable'); }
+      },
     }, '📋');
     wrap.append(input, showBtn, copyBtn);
     return el('div', { class: 'field' }, [
@@ -243,10 +185,7 @@ export async function EditorView(root, { params }) {
   }
 
   function textareaField(label, value, oninput) {
-    const ta = el('textarea', {
-      class: 'textarea',
-      oninput: (e) => oninput(e.target.value),
-    });
+    const ta = el('textarea', { class: 'textarea', oninput: (e) => oninput(e.target.value) });
     ta.value = value || '';
     return el('div', { class: 'field' }, [
       el('label', { class: 'field__label' }, label),
@@ -254,46 +193,50 @@ export async function EditorView(root, { params }) {
     ]);
   }
 
-  // ---------- Actions ----------
+  // ---------- Message sheet ----------
+  function openMessageSheet(m) {
+    const sheet = el('div', { class: 'sheet-backdrop', onclick: (e) => { if (e.target === sheet) sheet.remove(); } });
+    const card = el('div', { class: 'sheet' });
+    sheet.appendChild(card);
 
-  function markDirty() {
-    dirty = true;
-    document.title = '● NOTE5';
-  }
-
-  async function persist() {
-    if (!hasContent(note) && isNew) {
-      // No guardar drafts completamente vacíos
-      return;
+    function showActions() {
+      clear(card);
+      card.append(
+        el('button', { class: 'sheet__btn', onclick: async () => {
+          try { await navigator.clipboard.writeText(m.text); toast('Copied'); } catch {}
+          sheet.remove();
+        } }, '📋 Copy'),
+        el('button', { class: 'sheet__btn', onclick: () => showEdit() }, '✏️ Edit'),
+        el('button', { class: 'sheet__btn sheet__btn--danger', onclick: async () => {
+          note.messages = note.messages.filter(x => x.id !== m.id);
+          await persist(); sheet.remove(); renderChat();
+        } }, '🗑 Delete'),
+        el('button', { class: 'sheet__btn sheet__btn--ghost', onclick: () => sheet.remove() }, 'Cancel'),
+      );
     }
-    await saveNote(userId, note);
-    dirty = false;
-    document.title = 'NOTE5';
-    if (isNew) {
-      // Cambiar la URL para que un refresh cargue la nota guardada
-      history.replaceState(null, '', `#/note/${note.id}`);
+
+    function showEdit() {
+      clear(card);
+      const ta = el('textarea', { class: 'textarea', style: 'margin-bottom:12px' });
+      ta.value = m.text;
+      card.append(
+        ta,
+        el('button', { class: 'sheet__btn sheet__btn--primary', onclick: async () => {
+          const text = ta.value.trim();
+          if (!text) return;
+          m.text = text; m.edited = true;
+          await persist(); sheet.remove(); renderChat();
+        } }, 'Save'),
+        el('button', { class: 'sheet__btn sheet__btn--ghost', onclick: () => sheet.remove() }, 'Cancel'),
+      );
+      requestAnimationFrame(() => ta.focus());
     }
+
+    showActions();
+    document.body.appendChild(sheet);
   }
 
-  let persistTimer = null;
-  function debouncedPersist() {
-    markDirty();
-    clearTimeout(persistTimer);
-    persistTimer = setTimeout(() => persist(), 800);
-  }
-
-  async function onBack() {
-    if (dirty && hasContent(note)) await persist();
-    back();
-  }
-
-  async function togglePin() {
-    note.pinned = !note.pinned;
-    pinBtn.classList.toggle('pin-active', note.pinned);
-    pinBtn.title = note.pinned ? 'Unpin' : 'Pin';
-    await persist();
-  }
-
+  // ---------- Icons / menu ----------
   function openIconPicker() {
     const sheet = el('div', { class: 'sheet-backdrop', onclick: (e) => { if (e.target === sheet) sheet.remove(); } });
     const card = el('div', { class: 'sheet' });
@@ -320,23 +263,22 @@ export async function EditorView(root, { params }) {
     const sheet = el('div', { class: 'sheet-backdrop', onclick: (e) => { if (e.target === sheet) sheet.remove(); } });
     const card = el('div', { class: 'sheet' });
 
-    const typeOptions = [
+    for (const o of [
       { t: 'chat', label: '💬 Chat' },
       { t: 'file', label: '📄 File' },
       { t: 'credentials', label: '🔒 Credentials' },
-    ];
-    for (const o of typeOptions) {
+    ]) {
       card.append(el('button', {
         class: 'sheet__btn' + (note.type === o.t ? ' sheet__btn--primary' : ''),
         onclick: async () => {
           switchType(note, o.t);
-          if (o.t !== 'chat' && !note.icon) note.icon = { file: '📄', credentials: '🔒' }[o.t];
           render();
           await persist();
           sheet.remove();
         },
       }, o.label));
     }
+
     card.append(
       el('button', {
         class: 'sheet__btn sheet__btn--danger',
@@ -344,6 +286,7 @@ export async function EditorView(root, { params }) {
           if (!confirm('Delete this note? This cannot be undone.')) return;
           await deleteNote(note.id);
           sheet.remove();
+          dirty = false;
           go('/notes');
         },
       }, '🗑 Delete note'),
@@ -352,9 +295,83 @@ export async function EditorView(root, { params }) {
     sheet.appendChild(card);
     document.body.appendChild(sheet);
   }
-}
 
-async function copyText(text) {
-  try { await navigator.clipboard.writeText(text); }
-  catch { toast('Clipboard unavailable'); }
+  // ---------- Actions ----------
+  function markDirty() {
+    if (dirty) return;
+    dirty = true;
+    document.title = '● NOTE5';
+  }
+
+  async function persist() {
+    clearTimeout(persistTimer);
+    if (isNew && !hasContent(note)) return;
+    await saveNote(userId, note);
+    dirty = false;
+    document.title = 'NOTE5';
+    if (isNew) {
+      isNew = false; // la nota ya existe
+      history.replaceState(null, '', `#/note/${note.id}`);
+      rememberLastOpened(note.id);
+    }
+  }
+
+  function debouncedPersist() {
+    markDirty();
+    clearTimeout(persistTimer);
+    persistTimer = setTimeout(() => persist(), 800);
+  }
+
+  async function onBack() {
+    if (dirty && hasContent(note)) {
+      const settings = loadSettings();
+      if (settings.warnUnsaved) {
+        const { choice, dontAsk } = await confirmDialog({
+          title: 'Unsaved changes',
+          message: 'You have unsaved changes. What do you want to do?',
+          confirmLabel: 'Save & leave',
+          cancelLabel: 'Stay',
+          altLabel: 'Discard',
+          showDontAsk: true,
+        });
+        if (dontAsk) updateSettings({ warnUnsaved: false });
+        if (choice === 'cancel') return;
+        if (choice === 'confirm') await persist();
+        // 'alt' → discard, salimos sin guardar
+        if (choice === 'alt') { dirty = false; }
+      } else {
+        await persist();
+      }
+    } else if (dirty) {
+      // contenido vacío, no guardamos
+      dirty = false;
+    }
+    back();
+  }
+
+  async function togglePin() {
+    note.pinned = !note.pinned;
+    pinBtn.classList.toggle('pin-active', note.pinned);
+    pinBtn.title = note.pinned ? 'Unpin' : 'Pin';
+    await persist();
+  }
+
+  // ---------- Autosave + beforeunload + cleanup ----------
+  const beforeUnloadHandler = (e) => {
+    if (!dirty) return;
+    e.preventDefault();
+    e.returnValue = '';
+  };
+  window.addEventListener('beforeunload', beforeUnloadHandler);
+
+  startAutosave(
+    () => ({ dirty, note, userId }),
+    async (s) => { if (s.dirty && hasContent(s.note)) await persist(); }
+  );
+
+  window.__viewCleanup = () => {
+    window.removeEventListener('beforeunload', beforeUnloadHandler);
+    clearTimeout(persistTimer);
+    stopAutosave();
+  };
 }

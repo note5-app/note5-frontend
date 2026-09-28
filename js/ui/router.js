@@ -1,7 +1,6 @@
 const routes = [];
 
 export function register(pattern, handler) {
-  // pattern: "/note/:id" → regex con capturas
   const parts = pattern.split('/').filter(Boolean);
   const keys = [];
   const regex = new RegExp('^/' + parts.map(p => {
@@ -19,6 +18,12 @@ export function go(path) {
 export function back() { history.back(); }
 
 export async function render() {
+  // Cleanup de la vista anterior, si dejó uno
+  if (window.__viewCleanup) {
+    try { window.__viewCleanup(); } catch (e) { console.warn(e); }
+    window.__viewCleanup = null;
+  }
+
   const hash = location.hash.slice(1) || '/';
   const [path, queryStr] = hash.split('?');
   const query = Object.fromEntries(new URLSearchParams(queryStr || ''));
@@ -32,7 +37,6 @@ export async function render() {
       return;
     }
   }
-  // 404 → home
   go('/');
 }
 

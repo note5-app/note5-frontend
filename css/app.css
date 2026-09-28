@@ -501,3 +501,52 @@ body {
 }
 .icon-grid__item:hover { background: var(--surface-hover); }
 .icon-grid__item.active { border-color: var(--accent); background: var(--accent-muted); }
+
+/* ---------- Dialog ---------- */
+.dialog-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(5,10,14,0.7);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  z-index: 400;
+  display: grid; place-items: center;
+  padding: var(--space-4);
+  animation: fade-in var(--dur-fast) ease;
+}
+.dialog {
+  width: min(420px, 100%);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  display: flex; flex-direction: column;
+  gap: var(--space-4);
+  box-shadow: var(--shadow-2);
+}
+.dialog__title { font-size: 17px; font-weight: 600; color: var(--text-strong); }
+.dialog__msg { font-size: 14px; color: var(--text); line-height: 1.5; }
+.dialog__actions { display: flex; gap: var(--space-2); justify-content: flex-end; flex-wrap: wrap; }
+.dialog__actions .btn { min-width: 90px; }
+.dialog__check {
+  display: flex; gap: var(--space-2); align-items: center;
+  font-size: 13px; color: var(--text-muted);
+}
+.dialog__check input[type="checkbox"] {
+  appearance: none;
+  width: 18px; height: 18px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  display: grid; place-items: center;
+  flex-shrink: 0;
+}
+.dialog__check input[type="checkbox"]:checked {
+  background: var(--accent); border-color: var(--accent);
+}
+.dialog__check input[type="checkbox"]:checked::after {
+  content: "";
+  width: 5px; height: 9px;
+  border: solid var(--accent-contrast);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) translate(-1px, -2px);
+}

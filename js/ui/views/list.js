@@ -3,11 +3,13 @@ import { go } from '../router.js';
 import { session } from '../../storage/session.js';
 import { toggleTheme } from '../theme.js';
 import { listNotes, previewOf } from '../../storage/notes.js';
+import { filterNotes, parseQuery } from '../search.js';
 
 export async function ListView(root) {
   clear(root);
 
   const userId = session.user.userId;
+  const allNotes = await listNotes(userId);
 
   const header = el('header', { class: 'header' }, [
     el('button', { class: 'btn btn--ghost btn--icon', title: 'Settings', onclick: () => go('/settings') }, '⚙'),
@@ -19,32 +21,51 @@ export async function ListView(root) {
   ]);
 
   const searchInput = el('input', {
-    class: 'input', type: 'search', placeholder: 'Search…  (name: / current: / global:)',
-    autocomplete: 'off',
+    class: 'input', type: 'search',
+    placeholder: 'Search…  (name: / current: / global:)',
+    autocomplete: 'off', autocapitalize: 'off', spellcheck: false,
   });
+
+  const scopeHint = el('div', {
+    style: 'font-size:11px;color:var(--text-muted);margin-top:6px;font-family:var(--font-mono)',
+  }, 'scope: all');
+
   const search = el('div', {
-    style: 'padding:12px 16px;border-bottom:1px solid var(--border)'
-  }, [searchInput]);
+    style: 'padding:12px 16px;border-bottom:1px solid var(--border)',
+  }, [searchInput, scopeHint]);
 
   const list = el('div', { class: 'list' });
-
   const fab = el('button', { class: 'fab', title: 'New note', onclick: () => go('/note/new') }, '+');
 
   root.append(header, search, list, fab);
 
-  // Cargar notas
-  const notes = await listNotes(userId);
+  let debounce = null;
+  searchInput.addEventListener('input', () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(() => renderList(), 120);
+  });
 
-  if (notes.length === 0) {
-    list.appendChild(el('div', { class: 'list__empty' }, [
-      el('div', { style: 'font-size:40px;margin-bottom:12px' }, '📝'),
-      el('div', {}, 'No notes yet'),
-      el('div', { style: 'font-size:13px;margin-top:8px;opacity:0.7' }, 'Tap + to create your first note'),
-    ]));
-    return;
+  function renderList() {
+    clear(list);
+    const q = parseQuery(searchInput.value);
+    scopeHint.textContent = 'scope: ' + q.scope + (q.terms.length ? ' · ' + q.terms.join(' ') : '');
+
+    const filtered = filterNotes(allNotes, searchInput.value);
+
+    if (filtered.length === 0) {
+      list.appendChild(el('div', { class: 'list__empty' }, [
+        el('div', { style: 'font-size:40px;margin-bottom:12px' }, allNotes.length ? '🔍' : '📝'),
+        el('div', {}, allNotes.length ? 'No matches' : 'No notes yet'),
+        !allNotes.length
+          ? el('div', { style: 'font-size:13px;margin-top:8px;opacity:0.7' }, 'Tap + to create your first note')
+          : null,
+      ].filter(Boolean)));
+      return;
+    }
+    for (const n of filtered) list.appendChild(renderItem(n));
   }
 
-  for (const n of notes) list.appendChild(renderItem(n));
+  renderList();
 }
 
 function renderItem(n) {
